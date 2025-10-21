@@ -1,0 +1,6 @@
+-change lines to points
+-make a function that gives a random number to each point
+- change the function so that the numbers are in a list order
+
+- add rect function that adds new rect vertically
+- add rect function that adds new rect horizontally
