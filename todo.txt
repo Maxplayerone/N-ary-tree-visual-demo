@@ -1,7 +1,1 @@
-- right arrow to generate new point (first row has one point, second has two etc.)
-
--make a function that gives a random number to each point
-- change the function so that the numbers are in a list order
-
-- add rect function that adds new rect vertically
-- add rect function that adds new rect horizontally
+- make a function in which you specify how many nodes you have and it returns a [dynamic][2]f32 for each node position
