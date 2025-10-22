@@ -1,4 +1,5 @@
--change lines to points
+- right arrow to generate new point (first row has one point, second has two etc.)
+
 -make a function that gives a random number to each point
 - change the function so that the numbers are in a list order
 
