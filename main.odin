@@ -2,44 +2,19 @@ package main
 
 import "core:fmt"
 import "core:mem"
+import vmem "core:mem/virtual"
 import "core:math/rand"
+import "core:strings"
 
 import rl "vendor:raylib"
 
 Width :: 1720
 Height :: 1240
 
-Grid :: struct{
-	//columns: [dynamic]Column,
-	root: ^Node,	
-}
-
 Node :: struct{
 	val: [2]f32,
 	left: ^Node,
 	right: ^Node,
-}
-
-Column :: struct{
-	hpos: [dynamic]f32,
-	vpos: f32
-}
-
-generate_points_for_column :: proc(num_of_columns: int, given_column: int, amount_of_points: int, allocator := context.allocator) -> Column{
-	hpos := make([dynamic]f32, allocator)
-	vpos := f32(given_column + 1) * f32(Width) / f32(num_of_columns + 1)
-
-	for i in 0..<amount_of_points{
-		append(&hpos, f32(i + 1) * f32(Height)/f32(amount_of_points + 1))
-	}
-
-	return Column{hpos = hpos, vpos = vpos} 
-}
-
-generate_column :: proc(points: ^[dynamic][2]f32, vpos: f32, num_of_points: int){
-	for i in 0..<num_of_points{
-		append(points, [2]f32{vpos, f32(i + 1) * f32(Height)/f32(num_of_points + 1)})
-	}
 }
 
 pow :: proc(num: int, power: int) -> int{
@@ -62,7 +37,6 @@ generate_points :: proc(nodes: int, allocator := context.temp_allocator) -> [dyn
 
 	nodes_modifiable := nodes
 	points := make([dynamic][2]f32, allocator)
-	//1. generate correct columns number and the number of points in each column
 	rows: [dynamic]int
 
 	i := 0
@@ -81,72 +55,228 @@ generate_points :: proc(nodes: int, allocator := context.temp_allocator) -> [dyn
 	}
 	columns := len(rows)
 
-	/*
-	for i in 0..<columns{
-		if i + 1 == columns{
-			append(&grid.columns, generate_points_for_column(columns, i, rows))
-		}
-		else{
-			append(&grid.columns, generate_points_for_column(columns, i, i + 1))
-		}
-	}
-	*/
-
 	for i in 0..<columns{
 		vpos := f32(i + 1) * f32(Width) / f32(columns + 1)
-		generate_column(&points, vpos, rows[i])
+
+		for j in 0..<rows[i]{
+			append(&points, [2]f32{vpos, f32(j + 1) * f32(Height)/f32(rows[i] + 1)})
+		}
 	}
-
-	fmt.println(rows)
-
-	/*
-	for i in 1..=nodes{
-		/*
-		hpos := make([dynamic]f32, allocator)
-		vpos := f32(given_column + 1) * f32(Width) / f32(num_of_columns + 1)
-
-		for i in 0..<amount_of_points{
-			append(&hpos, f32(i + 1) * f32(Height)/f32(amount_of_points + 1))
-		}
-		*/
-		//vpos := f32(i + 1) * f32(Width) / f32(columns + 1)
-		//hpos := f32(Height)/f32(rows[i] + 1)
-		column_index: int 
-		if i == 1{
-			column_index = 0
-		}
-		else if i == 2 || i == 3{
-			column_index = 1
-		}
-		else if i >= 4 && i <= 7{
-			column_index = 2
-		}
-		else{
-			assert(false, "no")
-		}
-
-		vpos := f32(Width) / f32(column_index + 2)
-
-		append(&points, [2]f32{vpos, Height / 2})
-	}
-	for point in points{
-		fmt.println(point)
-	}
-		*/
 	delete(rows)
 
 	return points
 }
 
-round :: proc(num: f32) -> int{
-	num_int := int(num)
-	after_decimal := num - f32(num_int)
-	if after_decimal >= 0.5{
-		return num_int + 1
+generate_tree :: proc(node_count: int, alloc := context.allocator) -> ^Node{
+	if node_count <= 0{
+		assert(false, "at least one node needed")
 	}
-	else{
-		return num_int
+
+	root := new(Node, alloc) 
+
+	for i in 0..<node_count - 1{
+		add_node(root, {f32(i + 1), f32(i + 1)}, alloc)
 	}
+
+	height := find_height(root) + 1
+	rows := node_count_for_each_level(root)
+
+	iter := 0
+	for i in 0..<height{
+		vpos := f32(i + 1) * f32(Width) / f32(height + 1)
+
+		for j in 0..<rows[i]{
+			val := [2]f32{vpos, f32(j + 1) * f32(Height)/f32(rows[i] + 1)}
+			add_val_to_node(root, iter, val)
+			iter += 1
+		}
+	}
+
+	delete(rows)
+	return root
+}
+
+find_height :: proc(root: ^Node) -> int{
+	if root == nil{
+		return -1
+	}
+	return max(find_height(root.left), find_height(root.right)) + 1
+}
+
+Queue :: struct($T: typeid){
+    data: [dynamic]T,
+}
+
+queue_push :: proc(queue: ^Queue($T), elem: T){
+    append(&queue.data, elem)
+}
+
+queue_pop :: proc(queue: ^Queue($T)) -> T{
+	if len(queue.data) == 0{
+		return {}
+	}
+	val := queue.data[0]
+    ordered_remove(&queue.data, 0)
+	return val
+}
+
+queue_empty :: proc(queue: ^Queue($T)){
+    clear(&queue.data)
+}
+
+queue_print :: proc(queue: Queue($T)){
+	b := strings.builder_make()
+	strings.write_rune(&b, '[')
+	for elem, i in queue.data{
+		strings.write_int(&b, elem)
+		strings.write_string(&b, ", ")
+	}
+	pop(&b.buf)
+	pop(&b.buf)
+	strings.write_string(&b, "]\n")
+	fmt.println(strings.to_string(b))
+	delete(b.buf)
+}
+
+add_node :: proc(root: ^Node, val: [2]f32, allocator: mem.Allocator){
+	queue: Queue(^Node)
+
+	queue_push(&queue, root)
+	for len(queue.data) > 0{
+		cur_node := queue_pop(&queue)
+
+		if cur_node.left == nil{
+			new_node := new(Node, allocator)
+			new_node.val = val
+
+			cur_node.left = new_node
+			break
+		}
+		else{
+			queue_push(&queue, cur_node.left)
+		}
+
+		if cur_node.right == nil{
+			new_node := new(Node, allocator)
+			new_node.val = val
+
+			cur_node.right = new_node
+			break
+		}	
+		else{
+			queue_push(&queue, cur_node.right)
+		}
+	}
+
+	delete(queue.data)
+}
+
+add_val_to_node :: proc(root: ^Node, i: int, val: [2]f32){
+	if root == nil{
+		return
+	}
+	iter := 0
+
+	queue: Queue(^Node)
+	queue_push(&queue, root)
+	for len(queue.data) > 0{
+		cur_node := queue_pop(&queue)
+
+		if iter == i{
+			cur_node.val = val
+
+			delete(queue.data)
+			return
+		}
+		iter += 1
+
+		if cur_node.left != nil{
+			queue_push(&queue, cur_node.left)
+		}
+		if cur_node.right != nil{
+			queue_push(&queue, cur_node.right)
+		}
+	}
+	delete(queue.data)
+}
+
+print :: proc(root: ^Node){
+	if root == nil{
+		return
+	}
+
+	queue: Queue(^Node)
+	queue_push(&queue, root)
+	for len(queue.data) > 0{
+		cur_node := queue_pop(&queue)
+		fmt.println(cur_node.val)
+
+		if cur_node.left != nil{
+			queue_push(&queue, cur_node.left)
+		}
+		if cur_node.right != nil{
+			queue_push(&queue, cur_node.right)
+		}
+	}
+	delete(queue.data)
+}
+
+node_count_for_each_level :: proc(root: ^Node) -> [dynamic]int{
+	if root == nil{
+		return {}
+	}
+
+	NodePointerDepth :: struct{
+		node: ^Node,
+		depth: int,
+	}
+
+	queue: Queue(NodePointerDepth)
+	queue_push(&queue, NodePointerDepth{root, 0})
+
+	depth_count: [dynamic]int
+	for len(queue.data) > 0{
+		cur_node := queue_pop(&queue)
+
+		if cur_node.depth == len(depth_count){
+			append(&depth_count, 1)
+		}
+		else{
+			depth_count[cur_node.depth] += 1;
+		}
+
+		if cur_node.node.left != nil{
+			queue_push(&queue, NodePointerDepth{cur_node.node.left, cur_node.depth + 1})
+		}
+		if cur_node.node.right != nil{
+			queue_push(&queue, NodePointerDepth{cur_node.node.right, cur_node.depth + 1})
+		}
+	}
+	delete(queue.data)
+
+	return depth_count
+}
+
+draw_points :: proc(root: ^Node){
+	if root == nil{
+		return
+	}
+
+	queue: Queue(^Node)
+	queue_push(&queue, root)
+	for len(queue.data) > 0{
+		cur_node := queue_pop(&queue)
+
+		rl.DrawCircleV(cur_node.val, 10.0, rl.BLUE)
+
+		if cur_node.left != nil{
+			queue_push(&queue, cur_node.left)
+		}
+		if cur_node.right != nil{
+			queue_push(&queue, cur_node.right)
+		}
+	}
+	delete(queue.data)
 }
 
 main :: proc() {
@@ -157,61 +287,30 @@ main :: proc() {
 	rl.InitWindow(1720, 1240, "my window")
 	rl.SetTargetFPS(60)
 
-	nodes := 16 
-	points := generate_points(nodes)
 
-	columns := 1
-	rows := 0
+	arena: vmem.Arena
+	arena_alloc := vmem.arena_allocator(&arena)
 
-	//grid: Grid
-	//grid.root = new(Node) 
-	//grid.root.val = generate_points_for_column(1, 0, 1)
-	/*
-	for i in 0..<num_of_columns{
-		append(&grid.columns, generate_points_for_column(num_of_columns, i, i + 1))
-	}
-	*/
+	node_count := 10
+	root := generate_tree(node_count, arena_alloc)
 
 	for !rl.WindowShouldClose(){
 		rl.BeginDrawing()
 		rl.ClearBackground(rl.WHITE)
 
 		if rl.IsKeyPressed(.J){
-			delete(points)
-			nodes += 1
-			points = generate_points(nodes)	
+			vmem.arena_destroy(&arena)
+			node_count += 1
+			root := generate_tree(node_count, arena_alloc)
 		}
 
-		/*
-		if rl.IsKeyPressed(.J){
-			rows += 1
-			clear(&grid.columns)
-
-			for i in 0..<columns{
-				if i + 1 == columns{
-					append(&grid.columns, generate_points_for_column(columns, i, rows))
-				}
-				else{
-					append(&grid.columns, generate_points_for_column(columns, i, i + 1))
-				}
-			}
-
-			if columns == rows{
-				columns += 1
-				rows = 0
-			}
+		if rl.IsKeyPressed(.L){
+			vmem.arena_destroy(&arena)
+			node_count -= 1
+			root := generate_tree(node_count, arena_alloc)
 		}
 
-		for column in grid.columns{
-			for point in column.hpos{
-				rl.DrawCircleV({column.vpos, point}, 10.0, rl.BLUE)
-			}
-		}
-		*/
-
-		for point in points{
-			rl.DrawCircleV(point, 10.0, rl.BLUE)
-		}
+		draw_points(root)
 
 		rl.EndDrawing()
 	}
@@ -223,6 +322,7 @@ main :: proc() {
 	}
 	delete(grid.columns)
 	*/
+	vmem.arena_destroy(&arena)
 
 	for key, value in tracking_allocator.allocation_map {
 		fmt.printf("%v: Leaked %v bytes\n", value.location, value.size)
