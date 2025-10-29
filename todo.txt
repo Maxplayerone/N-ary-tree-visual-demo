@@ -1,3 +1,1 @@
-- adding a new node
-- nodes should store position of a dot
-- render dots based on nodes
+- going from binary to n-ary tree
