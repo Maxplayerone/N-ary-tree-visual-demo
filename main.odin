@@ -11,10 +11,10 @@ import rl "vendor:raylib"
 Width :: 1720
 Height :: 1240
 
-size: f32 = 50
+//size: f32 = 50
 
 // ------------ utils -------------
-get_rect :: proc(v: [2]f32) -> rl.Rectangle{
+get_rect :: proc(v: [2]f32, size := size) -> rl.Rectangle{
 	return {v.x, v.y, size, size}
 }
 
@@ -65,411 +65,179 @@ queue_print :: proc(queue: Queue($T)){
 	delete(b.buf)
 }
 
-
-//------------ N-ary tree section -----------
+//---------- N-ary tree section -----------
 Node :: struct{
 	val: NodeVal,
-	left: ^Node,
-	right: ^Node,
+	children: [dynamic]^Node,
 }
 
 NodeVal :: struct{
 	pos: [2]f32,
 	color: rl.Color,
-	parent_pos: [2]f32,
+	parent: ^Node,
+	depth: int,
 }
 
-find_height :: proc(root: ^Node) -> int{
-	if root == nil{
-		return -1
-	}
-	return max(find_height(root.left), find_height(root.right)) + 1
+create_root :: proc(alloc := context.allocator) -> ^Node{
+	root := new(Node, alloc)	
+	root.children = make([dynamic]^Node, alloc)
+	root.val.depth = 1
+	root.val.color = rl.RED
+	return root
 }
 
-node_count_for_each_level :: proc(root: ^Node) -> [dynamic]int{
-	if root == nil{
-		return {}
-	}
-
-	NodePointerDepth :: struct{
-		node: ^Node,
-		depth: int,
-	}
-
-	queue: Queue(NodePointerDepth)
-	queue_push(&queue, NodePointerDepth{root, 0})
-
-	depth_count: [dynamic]int
-	for len(queue.data) > 0{
-		cur_node := queue_pop(&queue)
-
-		if cur_node.depth == len(depth_count){
-			append(&depth_count, 1)
-		}
-		else{
-			depth_count[cur_node.depth] += 1;
-		}
-
-		if cur_node.node.left != nil{
-			queue_push(&queue, NodePointerDepth{cur_node.node.left, cur_node.depth + 1})
-		}
-		if cur_node.node.right != nil{
-			queue_push(&queue, NodePointerDepth{cur_node.node.right, cur_node.depth + 1})
-		}
-	}
-	delete(queue.data)
-
-	return depth_count
+add_node :: proc(parent: ^Node, alloc := context.allocator){
+	child := new(Node, alloc)	
+	child.children = make([dynamic]^Node, alloc)
+	child.val.depth = parent.val.depth + 1
+	//child.val.parent_pos = parent.val.pos
+	child.val.parent = parent
+	child.val.color = rl.RED
+	append(&parent.children, child)
 }
 
-add_node :: proc(root: ^Node, val: NodeVal, allocator: mem.Allocator){
+get_node_at_idx :: proc(root: ^Node, i: int) -> ^Node{
 	queue: Queue(^Node)
-
+	defer delete(queue.data)
 	queue_push(&queue, root)
-	for len(queue.data) > 0{
-		cur_node := queue_pop(&queue)
 
-		if cur_node.left == nil{
-			new_node := new(Node, allocator)
-			new_node.val = val
-
-			cur_node.left = new_node
-			break
-		}
-		else{
-			queue_push(&queue, cur_node.left)
-		}
-
-		if cur_node.right == nil{
-			new_node := new(Node, allocator)
-			new_node.val = val
-
-			cur_node.right = new_node
-			break
-		}	
-		else{
-			queue_push(&queue, cur_node.right)
-		}
-	}
-
-	delete(queue.data)
-}
-
-add_node_depth_one :: proc(root: ^Node, alloc := context.allocator) -> bool{
-	added := false
-	if root.left == nil{
-		new_node := new(Node, alloc)
-		root.left = new_node
-
-		added = true
-	}
-	else if root.left != nil && root.right == nil{
-		new_node := new(Node, alloc)
-		root.right = new_node
-
-		added = true
-	}
-
-	return added
-}
-
-get_parent_node :: proc(root: ^Node, child: ^Node) -> (^Node, bool){
-	if root == nil{
-		return {}, false
-	}
-
-	queue: Queue(^Node)
-	queue_push(&queue, root)
-	for len(queue.data) > 0{
-		cur_node := queue_pop(&queue)
-
-		if cur_node.left == child || cur_node.right == child{
-			delete(queue.data)
-			return cur_node, true
-		}
-
-		if cur_node.left != nil{
-			queue_push(&queue, cur_node.left)
-		}
-		if cur_node.right != nil{
-			queue_push(&queue, cur_node.right)
-		}
-	}
-	delete(queue.data)
-
-	return {}, false
-}
-
-node_at_idx :: proc(root: ^Node, i: int) -> ^Node{
-	if root == nil{
-
-		return {}
-	}
 	iter := 0
-
-	queue: Queue(^Node)
-	queue_push(&queue, root)
 	for len(queue.data) > 0{
 		cur_node := queue_pop(&queue)
 
 		if iter == i{
-			delete(queue.data)
-			return cur_node
-		}
+			return cur_node 
+		} 
 		iter += 1
 
-		if cur_node.left != nil{
-			queue_push(&queue, cur_node.left)
-		}
-		if cur_node.right != nil{
-			queue_push(&queue, cur_node.right)
+		for child in cur_node.children{
+			queue_push(&queue, child)
 		}
 	}
-	delete(queue.data)
-
 	return {}
 }
 
-print :: proc(root: ^Node){
-	if root == nil{
-		return
-	}
-
+get_node_count :: proc(root: ^Node) -> int{
 	queue: Queue(^Node)
 	queue_push(&queue, root)
-	for len(queue.data) > 0{
-		cur_node := queue_pop(&queue)
-		fmt.println(cur_node.val)
 
-		if cur_node.left != nil{
-			queue_push(&queue, cur_node.left)
-		}
-		if cur_node.right != nil{
-			queue_push(&queue, cur_node.right)
-		}
-	}
-	delete(queue.data)
-}
-
-tree_node_count :: proc(root: ^Node) -> int{
-	if root == nil{
-		return 0
-	}
 	iter := 0
-
-	queue: Queue(^Node)
-	queue_push(&queue, root)
 	for len(queue.data) > 0{
 		cur_node := queue_pop(&queue)
+
 		iter += 1
 
-		if cur_node.left != nil{
-			queue_push(&queue, cur_node.left)
-		}
-		if cur_node.right != nil{
-			queue_push(&queue, cur_node.right)
+		for child in cur_node.children{
+			queue_push(&queue, child)
 		}
 	}
 	delete(queue.data)
-	return iter
+	return iter 
 }
 
-draw_points :: proc(root: ^Node){
-	if root == nil{
-		return
-	}
-
+print :: proc(root: ^Node){
 	queue: Queue(^Node)
+	defer delete(queue.data)
 	queue_push(&queue, root)
-	for len(queue.data) > 0{
-		cur_node := queue_pop(&queue)
-
-		rl.DrawCircleV(cur_node.val.pos, 10.0, rl.BLUE)
-
-		if cur_node.left != nil{
-			queue_push(&queue, cur_node.left)
-		}
-		if cur_node.right != nil{
-			queue_push(&queue, cur_node.right)
-		}
-	}
-	delete(queue.data)
-}
-
-draw_rects :: proc(root: ^Node){
-	if root == nil{
-		return
-	}
-
-	queue: Queue(^Node)
-	queue_push(&queue, root)
-	for len(queue.data) > 0{
-		cur_node := queue_pop(&queue)
-
-		rl.DrawRectangleRec(get_rect(cur_node.val.pos), cur_node.val.color)
-
-		if cur_node.left != nil{
-			queue_push(&queue, cur_node.left)
-		}
-		if cur_node.right != nil{
-			queue_push(&queue, cur_node.right)
-		}
-	}
-	delete(queue.data)
-}
-
-draw_lines :: proc(root: ^Node){
-	if root == nil{
-		return
-	}
-
-	queue: Queue(^Node)
-	queue_push(&queue, root)
-	for len(queue.data) > 0{
-		cur_node := queue_pop(&queue)
-
-		if cur_node.val.parent_pos != {}{
-			//rl.DrawRectangleRec(get_rect(cur_node.val.pos), cur_node.val.color)
-			ppos := cur_node.val.parent_pos + size/2
-			cpos := cur_node.val.pos + size/2
-			rl.DrawLineV(ppos, cpos, rl.BLACK)
-		}
-
-		if cur_node.left != nil{
-			queue_push(&queue, cur_node.left)
-		}
-		if cur_node.right != nil{
-			queue_push(&queue, cur_node.right)
-		}
-	}
-	delete(queue.data)
-}
-
-generate_nodes :: proc(node_count: int, alloc := context.temp_allocator) -> ^Node{
-	if node_count <= 0{
-		assert(false, "at least one node needed")
-	}
-
-	root := new(Node, alloc) 
-
-	for i in 0..<node_count - 1{
-		val := NodeVal{
-			pos = {},
-			color = rl.RED
-		}
-		add_node(root, val, alloc)
-	}
-	return root
-}
-
-generate_tree_data :: proc(root: ^Node){
-	height := find_height(root) + 1
-	rows := node_count_for_each_level(root)
 
 	iter := 0
+	for len(queue.data) > 0{
+		cur_node := queue_pop(&queue)
+
+		iter += 1
+		fmt.println(iter, " ", cur_node.val)
+
+		for child in cur_node.children{
+			queue_push(&queue, child)
+		}
+	}
+}
+
+get_height :: proc(root: ^Node) -> int{
+	queue: Queue(^Node)
+	queue_push(&queue, root)
+
+	max := 0
+	for len(queue.data) > 0{
+		cur_node := queue_pop(&queue)
+
+		if cur_node.val.depth > max{
+			max = cur_node.val.depth
+		}
+
+		for child in cur_node.children{
+			queue_push(&queue, child)
+		}
+	}
+	delete(queue.data)
+	return max 
+}
+
+get_rows :: proc(root: ^Node, alloc := context.allocator) -> []int{
+	height := get_height(root)
+	rows := make([dynamic]int, height, alloc)
+	queue: Queue(^Node)
+	queue_push(&queue, root)
+
+	max := 0
+	for len(queue.data) > 0{
+		cur_node := queue_pop(&queue)
+
+		rows[cur_node.val.depth - 1] += 1
+
+		for child in cur_node.children{
+			queue_push(&queue, child)
+		}
+	}
+	delete(queue.data)
+	return rows[:]
+}
+
+generate_node_data :: proc(root: ^Node){
+	rows := get_rows(root)
+	defer delete(rows)
+
+	height := get_height(root) 
+
+	iter: int
 	for i in 0..<height{
 		vpos := f32(i + 1) * f32(Width) / f32(height + 1)
 
 		for j in 0..<rows[i]{
-			node := node_at_idx(root, iter)
+			//node := node_at_idx(root, iter)
+			node := get_node_at_idx(root, iter)
 			node.val.pos = [2]f32{vpos, f32(j + 1) * f32(Height)/f32(rows[i] + 1)}
-			node.val.color = rl.RED
-		
-			if parent, found := get_parent_node(root, node); found{
-				node.val.parent_pos = parent.val.pos 
-			}
+			//node.val.color = rl.RED
 			iter += 1
 		}
 	}
-
-	delete(rows)
 }
 
-generate_tree :: proc(node_count: int, alloc := context.allocator) -> ^Node{
-	root := generate_nodes(node_count, alloc)
-	generate_tree_data(root)
-	return root
+
+size := f32(50.0)
+draw_rects :: proc(root: ^Node){
+	//rl.DrawCircleV(root.val.pos, size, rl.RED)
+	rl.DrawRectangleRec(get_rect(root.val.pos), root.val.color)
+	for child in root.children{
+		draw_rects(child)
+	}
 }
 
-clicked_node :: proc(root: ^Node) -> int{
-	if root == nil{
-		return -1 
+draw_lines :: proc(root: ^Node){
+	if root.val.parent != nil{
+		cpos := root.val.pos + size/2
+		ppos := root.val.parent.val.pos + size/2
+		rl.DrawLineV(cpos, ppos, rl.BLACK)
 	}
 
-	queue: Queue(^Node)
-	queue_push(&queue, root)
-	iter := 0
-	for len(queue.data) > 0{
-		cur_node := queue_pop(&queue)
-
-		if mouse_rect_collission(get_rect(cur_node.val.pos)){
-
-			delete(queue.data)
-			return iter 
-		}
-		iter += 1
-
-		if cur_node.left != nil{
-			queue_push(&queue, cur_node.left)
-		}
-		if cur_node.right != nil{
-			queue_push(&queue, cur_node.right)
-		}
+	for child in root.children{
+		draw_lines(child)
 	}
-	delete(queue.data)
-
-	return -1 
 }
 
-hovering_on_node :: proc(root: ^Node) -> int{
-	if root == nil{
-		return -1 
-	}
-
-	queue: Queue(^Node)
-	queue_push(&queue, root)
-	iter := 0
-	for len(queue.data) > 0{
-		cur_node := queue_pop(&queue)
-
-		if mouse_rect_collission(get_rect(cur_node.val.pos)){
-
-			delete(queue.data)
-			return iter 
-		}
-		iter += 1
-
-		if cur_node.left != nil{
-			queue_push(&queue, cur_node.left)
-		}
-		if cur_node.right != nil{
-			queue_push(&queue, cur_node.right)
-		}
-	}
-	delete(queue.data)
-
-	return -1 
-}
-
-set_tree_color :: proc(root: ^Node, color: rl.Color){
-	if root == nil{
-		return
-	}
-
-	queue: Queue(^Node)
-	queue_push(&queue, root)
-	for len(queue.data) > 0{
-		cur_node := queue_pop(&queue)
-		cur_node.val.color = color
-
-		if cur_node.left != nil{
-			queue_push(&queue, cur_node.left)
-		}
-		if cur_node.right != nil{
-			queue_push(&queue, cur_node.right)
-		}
-	}
-	delete(queue.data)
+draw_tree :: proc(root: ^Node){
+	draw_lines(root)
+	draw_rects(root)
 }
 
 main :: proc() {
@@ -484,48 +252,95 @@ main :: proc() {
 	arena: vmem.Arena
 	arena_alloc := vmem.arena_allocator(&arena)
 
-	node_count := 10 
-	root := generate_tree(node_count, arena_alloc)
-	fmt.println(tree_node_count(root))
+	//root := new(Node, arena_alloc)
+	root := create_root(arena_alloc)
+	add_node(root, arena_alloc)
+	add_node(root, arena_alloc)
+	add_node(root, arena_alloc)
+	add_node(root, arena_alloc)
+	add_node(root.children[0], arena_alloc)
+	generate_node_data(root)
+
+	cur_node := root
+	cur_node.val.color = rl.BLUE
+
+	focus_child_index := -1;
+
+	lime: rl.Color = rl.LIME;
+	red: rl.Color = rl.RED;
+	blue: rl.Color = rl.BLUE;
 
 	for !rl.WindowShouldClose(){
 		rl.BeginDrawing()
 		rl.ClearBackground(rl.WHITE)
 
-		if rl.IsKeyPressed(.J){
-			vmem.arena_destroy(&arena)
-			node_count += 1
-			root := generate_tree(node_count, arena_alloc)
+		if rl.IsKeyPressed(.Q){
+			fmt.println("Amount of children of current node ", cur_node.val.pos, " is ", len(cur_node.children))
 		}
 
-		if rl.IsMouseButtonPressed(.LEFT){
-			if idx := clicked_node(root); idx != -1{
-				node := node_at_idx(root, idx)
-				added := add_node_depth_one(node, arena_alloc)
-				if added{
-					fmt.println("addition was successful")
-					fmt.println(tree_node_count(root))
-					generate_tree_data(root)
-				}
-				else{
-					fmt.println("addition was unsuccessful")
-				}
-			}
+		if rl.IsKeyPressed(.O) && focus_child_index == -1 && len(cur_node.children) == 0{
+			add_node(cur_node, arena_alloc)
+			generate_node_data(root)
+			cur_node.val.color = red
+			cur_node = cur_node.children[0]
+			cur_node.val.color = blue 
 		}
-		set_tree_color(root, rl.RED)
-		if idx := hovering_on_node(root); idx != -1{
-			node := node_at_idx(root, idx)
-			node.val.color = rl.BLUE
+
+		if rl.IsKeyPressed(.ENTER) && focus_child_index == -1{
+			add_node(cur_node, arena_alloc)
+			generate_node_data(root)
+		}
+		else if rl.IsKeyPressed(.ENTER){
+			for child in cur_node.children{
+				child.val.color = red
+			}
+			cur_node = cur_node.children[focus_child_index]
+			cur_node.val.color = blue
+			focus_child_index = -1
 		}
 
 		if rl.IsKeyPressed(.L){
-			vmem.arena_destroy(&arena)
-			node_count -= 1
-			root := generate_tree(node_count, arena_alloc)
+			if len(cur_node.children) == 0{
+				fmt.println("no children")
+			}
+			else if len(cur_node.children) == 1{
+				cur_node.val.color = red
+				cur_node = cur_node.children[0]
+				cur_node.val.color = blue
+			}
+			else{
+				for child in cur_node.children{
+					child.val.color = lime 
+				}
+				focus_child_index = 0;
+				cur_node.val.color = red 
+			}
 		}
 
-		draw_lines(root)
-		draw_rects(root)
+		if rl.IsKeyPressed(.J){
+			if cur_node.val.parent != nil{
+				cur_node.val.color = red 
+				cur_node  = cur_node.val.parent
+				cur_node.val.color = blue
+			}
+		}
+
+		if focus_child_index != -1 && rl.IsKeyPressed(.K){
+			next_idx := focus_child_index + 1
+			if next_idx >= len(cur_node.children){
+				next_idx = 0
+			}
+			cur_node.children[focus_child_index].val.color = lime
+			focus_child_index = next_idx
+		}
+
+		//drawing section
+		draw_tree(root)
+
+
+		if focus_child_index != -1{
+			cur_node.children[focus_child_index].val.color = blue;
+		}
 
 		rl.EndDrawing()
 	}
